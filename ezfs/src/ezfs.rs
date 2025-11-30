@@ -11,7 +11,7 @@ use crate::inode::{EzfsInode, InodeStore};
 use crate::sb::{EzfsSuperblock, EzfsSuperblockDisk};
 use defs::*;
 use kernel::dentry;
-use kernel::fs::{file, File, FileSystem, Offset, Registration};
+use kernel::fs::{File, FileSystem, Offset, Registration, file};
 use kernel::inode::{INode, INodeState, Mapper, Params, Type};
 use kernel::prelude::*;
 use kernel::sb::{New, SuperBlock, Type as SuperType};
@@ -22,25 +22,8 @@ use kernel::{c_str, fs, str::CStr};
 
 use core::marker::{PhantomData, Send, Sync};
 use core::mem::size_of;
-use pin_init::{pin_data, PinInit, PinnedDrop};
 
 struct RustEzFs;
-
-#[pin_data]
-struct RustEzFsModule<RustEzFs> {
-    #[pin]
-    fs_reg: Registration,
-    _p: PhantomData<RustEzFs>,
-}
-
-impl kernel::InPlaceModule for RustEzFsModule<RustEzFs> {
-    fn init(module: &'static ThisModule) -> impl PinInit<Self, Error> {
-        try_pin_init!(Self {
-            fs_reg <- Registration::new::<RustEzFs>(module),
-            _p: PhantomData,
-        })
-    }
-}
 
 impl RustEzFs {
     const DIR_FOPS: file::Ops<RustEzFs> = file::Ops::new::<RustEzFs>();
@@ -94,7 +77,7 @@ impl RustEzFs {
 }
 
 impl FileSystem for RustEzFs {
-    type Data = Pin<KBox<EzfsSuperblock>>;
+    type Data = KBox<EzfsSuperblock>;
     type INodeData = EzfsInode;
     const NAME: &'static CStr = c_str!("rustezfs");
     const SUPER_TYPE: SuperType = SuperType::BlockDev;
@@ -130,7 +113,6 @@ impl FileSystem for RustEzFs {
     }
 }
 
-#[vtable]
 impl kernel::inode::Operations for RustEzFs {
     type FileSystem = Self;
 
@@ -142,17 +124,12 @@ impl kernel::inode::Operations for RustEzFs {
         let h = sb.data();
 
         let name = dentry.name();
-        pr_info!("looking for file: {:?}", core::str::from_utf8(name));
 
         if name.len() > EZFS_FILENAME_BUF_SIZE {
-            pr_info!("dentry name to long: {:?}", core::str::from_utf8(name));
             return Err(ENAMETOOLONG);
         }
 
         let ezfs_dir_inode = parent.data();
-        pr_info!("ezfs_dir inode number: {:?}", parent.ino());
-        pr_info!("ezfs dir inode links: {:?}", ezfs_dir_inode.nlink());
-        pr_info!("data_blk_num: {:?}", ezfs_dir_inode.data_blk_num());
 
         let offset = ezfs_dir_inode
             .data_blk_num()
@@ -163,20 +140,9 @@ impl kernel::inode::Operations for RustEzFs {
         let dir_entries =
             DirEntryStore::from_bytes(&mapped[..size_of::<DirEntryStore>()]).ok_or(EIO)?;
 
-        let dir_entry = dir_entries.iter().find(|x| {
-            pr_info!(
-                "filename: {:?} = {}\n",
-                x.filename(),
-                core::str::from_utf8(x.filename()).unwrap_or("<invalid utf8>")
-            );
-
-            pr_info!(
-                "dname: {:?} = {}\n",
-                name,
-                core::str::from_utf8(name).unwrap_or("<invalid utf8>")
-            );
-            x.filename() == name && x.is_active()
-        });
+        let dir_entry = dir_entries
+            .iter()
+            .find(|x| x.filename() == name && x.is_active());
 
         let inode = if let Some(entry) = dir_entry {
             pr_info!("Inode found: {:?}", entry.inode_no());
@@ -189,7 +155,6 @@ impl kernel::inode::Operations for RustEzFs {
     }
 }
 
-#[vtable]
 impl file::Operations for RustEzFs {
     type FileSystem = Self;
 
@@ -207,11 +172,8 @@ impl file::Operations for RustEzFs {
         emitter: &mut file::DirEmitter,
     ) -> Result {
         let pos: usize = emitter.pos().try_into().map_err(|_| ENOENT)?;
-        pr_info!("emitter position: {:?}", pos);
 
         if pos < 2 {
-            pr_info!("pos < 2: trying to emit dots");
-            pr_info!("file inode: {:?}", file.inode().ino());
             if !emitter.emit_dots(file) {
                 return Ok(());
             }
@@ -222,7 +184,6 @@ impl file::Operations for RustEzFs {
 
         let index = {
             let disk_pos = pos.checked_sub(2).ok_or(ENOENT)?;
-            pr_info!("disk position: {:?}", disk_pos);
 
             if disk_pos % size_of::<EzfsDirEntry>() != 0 {
                 return Err(ENOENT);
@@ -231,27 +192,20 @@ impl file::Operations for RustEzFs {
             disk_pos / size_of::<EzfsDirEntry>()
         };
 
-        pr_info!("emitter index: {:?}", index);
-
         if index >= EZFS_MAX_CHILDREN {
-            pr_info!("index higher than max children: {:?}", index);
             return Ok(());
         }
 
         let ezfs_dir_inode = inode.data();
-        pr_info!("inode data_blk_num: {:?}", ezfs_dir_inode.data_blk_num());
 
         let offset = ezfs_dir_inode
             .data_blk_num()
             .checked_mul(EZFS_BLOCK_SIZE as u64)
             .ok_or(EIO)?;
 
-        pr_info!("valid offset: {:?}", offset);
-
         let mapped = h.mapper.mapped_folio(offset.try_into()?)?;
         let dir_entries =
             DirEntryStore::from_bytes(&mapped[..size_of::<DirEntryStore>()]).ok_or(EIO)?;
-        pr_info!("found dir_entries");
 
         let inode_store_offset = EZFS_INODE_STORE_DATABLOCK_NUMBER * EZFS_BLOCK_SIZE;
         let mapped_inode_store = h.mapper.mapped_folio(inode_store_offset.try_into()?)?;
@@ -280,14 +234,4 @@ impl file::Operations for RustEzFs {
 
         Ok(())
     }
-}
-
-type FsModule = RustEzFsModule<RustEzFs>;
-
-module! {
-    type: FsModule,
-    name: "rustezfs",
-    authors: ["ls4121@columbia.edu", "kfb2117@columbia.edu"],
-    description: "Easy file system in Rust",
-    license: "GPL",
 }
