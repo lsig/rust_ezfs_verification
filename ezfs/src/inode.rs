@@ -1,16 +1,16 @@
 use crate::defs::*;
 use core::ops::Deref;
-use kernel::error::Result;
-use kernel::time::Timespec;
-use kernel::transmute::FromBytes;
-use kernel::uapi::{gid_t, mode_t, uid_t};
+// use kernel::time::Timespec;
+// use kernel::transmute::FromBytes;
+use kernel::types::Result;
+// use kernel::uapi::{gid_t, mode_t, uid_t};
 
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub(crate) struct EzfsInode {
-    mode: mode_t,
-    uid: uid_t,
-    gid: gid_t,
+    mode: u16,
+    uid: u32,
+    gid: u32,
     i_atime: i64, /* access time */
     i_mtime: i64, /* modified time */
     i_ctime: i64, /* change time */
@@ -21,29 +21,29 @@ pub(crate) struct EzfsInode {
 }
 
 impl EzfsInode {
-    pub(crate) fn mode(&self) -> mode_t {
+    pub(crate) fn mode(&self) -> u16 {
         self.mode
     }
 
-    pub(crate) fn uid(&self) -> uid_t {
+    pub(crate) fn uid(&self) -> u32 {
         self.uid
     }
 
-    pub(crate) fn gid(&self) -> gid_t {
+    pub(crate) fn gid(&self) -> u32 {
         self.gid
     }
 
-    pub(crate) fn atime(&self) -> Result<Timespec> {
-        Timespec::new(self.i_atime.try_into()?, 0)
-    }
-
-    pub(crate) fn mtime(&self) -> Result<Timespec> {
-        Timespec::new(self.i_mtime.try_into()?, 0)
-    }
-
-    pub(crate) fn ctime(&self) -> Result<Timespec> {
-        Timespec::new(self.i_ctime.try_into()?, 0)
-    }
+    // pub(crate) fn atime(&self) -> Result<Timespec> {
+    //     Timespec::new(self.i_atime.try_into()?, 0)
+    // }
+    //
+    // pub(crate) fn mtime(&self) -> Result<Timespec> {
+    //     Timespec::new(self.i_mtime.try_into()?, 0)
+    // }
+    //
+    // pub(crate) fn ctime(&self) -> Result<Timespec> {
+    //     Timespec::new(self.i_ctime.try_into()?, 0)
+    // }
 
     pub(crate) fn nlink(&self) -> u32 {
         self.nlink
@@ -76,4 +76,4 @@ impl Deref for InodeStore {
 }
 
 // SAFETY: EzfsInode is FromBytes, so array of them is too
-unsafe impl FromBytes for InodeStore {}
+// unsafe impl FromBytes for InodeStore {}

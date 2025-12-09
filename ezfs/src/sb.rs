@@ -1,13 +1,14 @@
+use crate::RustEzFs;
 use crate::defs::{EZFS_BLOCK_SIZE, EZFS_MAX_DATA_BLKS, EZFS_MAX_INODES};
 use crate::inode::InodeStore;
-use crate::RustEzFs;
 use core::mem::size_of;
 use kernel::fs::FileSystem;
 use kernel::inode;
-use kernel::new_mutex;
-use kernel::prelude::*;
-use kernel::sync::Mutex;
-use kernel::transmute::FromBytes;
+// use kernel::new_mutex;
+// use kernel::prelude::*;
+// use kernel::sync::Mutex;
+// use kernel::transmute::FromBytes;
+use std::sync::Mutex;
 
 #[repr(C)]
 pub(crate) struct EzfsSuperblockDiskRaw {
@@ -32,38 +33,53 @@ impl EzfsSuperblockDisk {
     }
 }
 
+impl Default for EzfsSuperblockDiskRaw {
+    fn default() -> Self {
+        Self {
+            version: 0,
+            magic: 0,
+            disk_blocks: 0,
+            free_inodes: [0; (EZFS_MAX_INODES / 32) + 1],
+            free_data_blocks: [0; (EZFS_MAX_DATA_BLKS / 32) + 1],
+            zero_data_blocks: [0; (EZFS_MAX_DATA_BLKS / 32) + 1],
+        }
+    }
+}
+
+impl Default for EzfsSuperblockDisk {
+    fn default() -> Self {
+        Self {
+            data: EzfsSuperblockDiskRaw::default(),
+            _padding: [0; EZFS_BLOCK_SIZE - size_of::<EzfsSuperblockDiskRaw>()],
+        }
+    }
+}
+
 // SAFETY: EzfsSuperblockDisk contains only primitive integer types (u32, u64, u8)
 // which accept any bit pattern. The struct is #[repr(C)] for consistent layout.
-unsafe impl FromBytes for EzfsSuperblockDisk {}
+// unsafe impl FromBytes for EzfsSuperblockDisk {}
 
-#[pin_data]
 pub(crate) struct EzfsSuperblock {
     pub(crate) version: u64,
     pub(crate) magic: u64,
     pub(crate) disk_blocks: u64,
-    #[pin]
     pub(crate) free_inodes: Mutex<[u32; (EZFS_MAX_INODES / 32) + 1]>,
-    #[pin]
     pub(crate) free_data_blocks: Mutex<[u32; (EZFS_MAX_DATA_BLKS / 32) + 1]>,
-    #[pin]
     pub(crate) zero_data_blocks: Mutex<[u8; (EZFS_MAX_DATA_BLKS / 32) + 1]>,
     pub(crate) mapper: inode::Mapper<RustEzFs>,
 }
 
 impl EzfsSuperblock {
-    pub(crate) fn new(
-        disk_sb: EzfsSuperblockDisk,
-        mapper: inode::Mapper<RustEzFs>,
-    ) -> impl PinInit<Self> {
-        pin_init!(Self {
+    pub(crate) fn new(disk_sb: EzfsSuperblockDisk, mapper: inode::Mapper<RustEzFs>) -> Self {
+        Self {
             version: disk_sb.data.version,
             magic: disk_sb.data.magic,
             disk_blocks: disk_sb.data.disk_blocks,
-            free_inodes <- new_mutex!(disk_sb.data.free_inodes),
-            free_data_blocks <- new_mutex!(disk_sb.data.free_data_blocks),
-            zero_data_blocks <- new_mutex!(disk_sb.data.zero_data_blocks),
+            free_inodes: Mutex::new(disk_sb.data.free_inodes),
+            free_data_blocks: Mutex::new(disk_sb.data.free_data_blocks),
+            zero_data_blocks: Mutex::new(disk_sb.data.zero_data_blocks),
             mapper,
-        })
+        }
     }
 
     pub(crate) fn magic(&self) -> u64 {
