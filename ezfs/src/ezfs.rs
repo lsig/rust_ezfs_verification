@@ -34,10 +34,11 @@ impl RustEzFs {
     }
 
     fn allocate_inode(sb: &EzfsSuperblock) -> Result<usize> {
-        let sb_data = sb.data.lock()?;
+        let mut sb_data = sb.data.lock().map_err(|_| Error(21))?;
 
         for idx in 0..EZFS_MAX_INODES {
-            if !sb_data.free_inodes.is_set(idx) {
+            if !sb_data.free_inodes.is_set(idx as u64) {
+                sb_data.free_inodes.set_bit(idx as u64);
                 return Ok(idx + 1); // FS is 1-indexed
             }
         }

@@ -8,6 +8,7 @@ use kernel::inode;
 // use kernel::prelude::*;
 // use kernel::sync::Mutex;
 // use kernel::transmute::FromBytes;
+use std::ops::{Deref, DerefMut};
 use std::sync::Mutex;
 
 #[repr(C)]
@@ -17,7 +18,7 @@ pub(crate) struct EzfsSuperblockDiskRaw {
     disk_blocks: u64,
     free_inodes: [u32; (EZFS_MAX_INODES / 32) + 1],
     free_data_blocks: [u32; (EZFS_MAX_DATA_BLKS / 32) + 1],
-    zero_data_blocks: [u8; (EZFS_MAX_DATA_BLKS / 32) + 1],
+    zero_data_blocks: [u32; (EZFS_MAX_DATA_BLKS / 32) + 1],
 }
 
 // TODO: assert size is equal to 4096 bytes
@@ -90,6 +91,7 @@ impl EzfsSuperblock {
 }
 
 #[repr(transparent)]
+#[cfg_attr(kani, derive(kani::Arbitrary))]
 pub(crate) struct Bitmap<const N: usize> {
     inner: [u32; N],
 }
@@ -116,7 +118,7 @@ impl<const N: usize> Bitmap<N> {
         self.inner[idx] &= !mask
     }
 
-    const fn new(inner: [u32; N]) -> Self {
+    pub const fn new(inner: [u32; N]) -> Self {
         Self { inner }
     }
 }

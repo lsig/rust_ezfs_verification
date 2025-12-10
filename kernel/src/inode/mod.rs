@@ -7,8 +7,8 @@ pub enum INodeState<T: FileSystem + ?Sized> {
 }
 
 pub struct INode<T: FileSystem + ?Sized> {
-    ino: usize,
-    data: Option<T::INodeData>,
+    pub ino: usize,
+    pub data: Option<T::INodeData>,
 }
 
 impl<T: FileSystem> INode<T> {
@@ -18,8 +18,8 @@ impl<T: FileSystem> INode<T> {
 }
 
 pub struct New<T: FileSystem + ?Sized> {
-    ino: usize,
-    data: Option<T::INodeData>,
+    pub ino: usize,
+    pub data: Option<T::INodeData>,
 }
 
 impl<T: FileSystem + ?Sized> New<T> {
@@ -29,9 +29,9 @@ impl<T: FileSystem + ?Sized> New<T> {
 }
 
 pub struct Mapper<T: FileSystem + ?Sized> {
-    inode: INode<T>,
-    begin: Offset,
-    end: Offset,
+    pub inode: INode<T>,
+    pub begin: Offset,
+    pub end: Offset,
 }
 
 unsafe impl<T: FileSystem + ?Sized> Send for Mapper<T> {}
