@@ -41,6 +41,7 @@ fn verify_inode_allocation() {
     let res1 = RustEzFs::allocate_inode(&sb);
     let res2 = RustEzFs::allocate_inode(&sb);
 
+    // If the allocation succeds they are not the same
     if let (Ok(ino1), Ok(ino2)) = (res1, res2) {
         kani::assert(
             ino1 != ino2,
