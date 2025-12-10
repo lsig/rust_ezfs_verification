@@ -55,18 +55,18 @@ impl Default for EzfsSuperblockDisk {
     }
 }
 
-// SAFETY: EzfsSuperblockDisk contains only primitive integer types (u32, u64, u8)
-// which accept any bit pattern. The struct is #[repr(C)] for consistent layout.
-// unsafe impl FromBytes for EzfsSuperblockDisk {}
-
 pub(crate) struct EzfsSuperblock {
     pub(crate) version: u64,
     pub(crate) magic: u64,
     pub(crate) disk_blocks: u64,
-    pub(crate) free_inodes: Mutex<[u32; (EZFS_MAX_INODES / 32) + 1]>,
-    pub(crate) free_data_blocks: Mutex<[u32; (EZFS_MAX_DATA_BLKS / 32) + 1]>,
-    pub(crate) zero_data_blocks: Mutex<[u8; (EZFS_MAX_DATA_BLKS / 32) + 1]>,
+    pub(crate) data: Mutex<EzfsSuperblockData>,
     pub(crate) mapper: inode::Mapper<RustEzFs>,
+}
+
+pub(crate) struct EzfsSuperblockData {
+    pub free_inodes: Bitmap<{ (EZFS_MAX_INODES / 32) + 1 }>,
+    pub free_data_blocks: Bitmap<{ (EZFS_MAX_DATA_BLKS / 32) + 1 }>,
+    pub zero_data_blocks: Bitmap<{ (EZFS_MAX_DATA_BLKS / 32) + 1 }>,
 }
 
 impl EzfsSuperblock {
@@ -75,14 +75,62 @@ impl EzfsSuperblock {
             version: disk_sb.data.version,
             magic: disk_sb.data.magic,
             disk_blocks: disk_sb.data.disk_blocks,
-            free_inodes: Mutex::new(disk_sb.data.free_inodes),
-            free_data_blocks: Mutex::new(disk_sb.data.free_data_blocks),
-            zero_data_blocks: Mutex::new(disk_sb.data.zero_data_blocks),
+            data: Mutex::new(EzfsSuperblockData {
+                free_inodes: Bitmap::new(disk_sb.data.free_inodes),
+                free_data_blocks: Bitmap::new(disk_sb.data.free_data_blocks),
+                zero_data_blocks: Bitmap::new(disk_sb.data.zero_data_blocks),
+            }),
             mapper,
         }
     }
 
     pub(crate) fn magic(&self) -> u64 {
         self.magic
+    }
+}
+
+#[repr(transparent)]
+pub(crate) struct Bitmap<const N: usize> {
+    inner: [u32; N],
+}
+
+impl<const N: usize> Bitmap<N> {
+    #[inline]
+    pub(crate) fn is_set(&self, block_num: u64) -> bool {
+        let idx: usize = (block_num / 32) as usize;
+        let mask = 1 << (block_num % 32);
+        (self.inner[idx] & mask) != 0
+    }
+
+    #[inline]
+    pub(crate) fn set_bit(&mut self, block_num: u64) {
+        let idx: usize = (block_num / 32) as usize;
+        let mask = 1 << (block_num % 32);
+        self.inner[idx] |= mask
+    }
+
+    #[inline]
+    pub(crate) fn clear_bit(&mut self, block_num: u64) {
+        let idx: usize = (block_num / 32) as usize;
+        let mask = 1 << (block_num % 32);
+        self.inner[idx] &= !mask
+    }
+
+    const fn new(inner: [u32; N]) -> Self {
+        Self { inner }
+    }
+}
+
+impl<const N: usize> Deref for Bitmap<N> {
+    type Target = [u32; N];
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl<const N: usize> DerefMut for Bitmap<N> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
     }
 }

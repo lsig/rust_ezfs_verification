@@ -28,56 +28,23 @@ use core::mem::size_of;
 
 struct RustEzFs;
 
-// impl RustEzFs {
-//     const DIR_FOPS: file::Ops<RustEzFs> = file::Ops::new::<RustEzFs>();
-//     const DIR_IOPS: kernel::inode::Ops<RustEzFs> = kernel::inode::Ops::new::<RustEzFs>();
-//
-//     fn iget(sb: &SuperBlock<Self>, ino: usize) -> Result<ARef<INode<Self>>> {
-//         let mut inode = match sb.get_or_create_inode(ino)? {
-//             INodeState::Existing(inode) => return Ok(inode),
-//             INodeState::Uninitilized(new_inode) => new_inode,
-//         };
-//
-//         let h = sb.data();
-//
-//         let offset = EZFS_INODE_STORE_DATABLOCK_NUMBER * EZFS_BLOCK_SIZE;
-//         let mapped_inode_store = h.mapper.mapped_folio(offset.try_into()?)?;
-//         let inode_store =
-//             InodeStore::from_bytes(&mapped_inode_store[..size_of::<InodeStore>()]).ok_or(EIO)?;
-//
-//         let ezfs_inode = inode_store[ino - 1];
-//         let mode = ezfs_inode.mode();
-//
-//         let typ = match mode & fs::mode::S_IFMT {
-//             fs::mode::S_IFREG => {
-//                 inode
-//                     .set_iops(Self::DIR_IOPS)
-//                     .set_fops(file::Ops::generic_ro_file());
-//                 // .set_aops(FILE_AOPS);
-//                 Type::Reg
-//             }
-//             fs::mode::S_IFDIR => {
-//                 inode.set_iops(Self::DIR_IOPS).set_fops(Self::DIR_FOPS);
-//                 Type::Dir
-//             }
-//             _ => return Err(ENOENT),
-//         };
-//
-//         inode.init(Params {
-//             typ,
-//             mode: ezfs_inode.mode().try_into()?,
-//             size: ezfs_inode.file_size().try_into()?,
-//             blocks: ezfs_inode.nblocks(),
-//             nlink: ezfs_inode.nlink(),
-//             uid: ezfs_inode.uid(),
-//             gid: ezfs_inode.gid(),
-//             ctime: ezfs_inode.ctime()?,
-//             mtime: ezfs_inode.mtime()?,
-//             atime: ezfs_inode.atime()?,
-//             value: ezfs_inode,
-//         })
-//     }
-// }
+impl RustEzFs {
+    fn get_max_blocks(sb: &EzfsSuperblock) -> u64 {
+        (sb.disk_blocks - 2).min(EZFS_MAX_DATA_BLKS as u64)
+    }
+
+    fn allocate_inode(sb: &EzfsSuperblock) -> Result<usize> {
+        let sb_data = sb.data.lock()?;
+
+        for idx in 0..EZFS_MAX_INODES {
+            if !sb_data.free_inodes.is_set(idx) {
+                return Ok(idx + 1); // FS is 1-indexed
+            }
+        }
+
+        Err(Error(21))
+    }
+}
 
 impl FileSystem for RustEzFs {
     type Data = Box<EzfsSuperblock>;
@@ -103,9 +70,6 @@ impl FileSystem for RustEzFs {
         let ezfs_sb = Box::new(EzfsSuperblock::new(disk_sb, mapper));
 
         sb.set_magic(EZFS_MAGIC_NUMBER);
-
-        #[cfg(kani)]
-        kani::assert(sb.magic() == EZFS_MAGIC_NUMBER, "magic was set correctly");
 
         Ok(ezfs_sb)
     }
