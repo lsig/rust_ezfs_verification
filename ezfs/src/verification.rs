@@ -49,3 +49,43 @@ fn verify_inode_allocation() {
         );
     }
 }
+
+#[kani::proof]
+fn verify_bitmap_simple_allocation() {
+    let mut bitmap: Bitmap<4> = kani::any();
+    let idx: u64 = kani::any();
+
+    if let Ok(allocation) = bitmap.set_bit(idx) {
+        kani::assert(bitmap.is_set(idx), "Set bit must be set");
+    } else {
+        // Error case: out of bounds
+        kani::assert(idx >= 4 * 32, "Error only for out of bounds");
+    }
+}
+
+#[kani::proof]
+fn verify_bitmap_complete() {
+    let mut bitmap: Bitmap<4> = kani::any();
+    let idx: u64 = kani::any();
+
+    // Property 1: is_set never panics
+    let is_set_result = bitmap.is_set(idx);
+
+    // Property 2: set_bit + is_set consistency
+    let set_result = bitmap.set_bit(idx);
+    if set_result.is_ok() {
+        kani::assert(bitmap.is_set(idx), "If set succeeds, bit must be set");
+    }
+
+    // Property 3: clear_bit + is_set consistency
+    let clear_result = bitmap.clear_bit(idx);
+    if clear_result.is_ok() {
+        kani::assert(!bitmap.is_set(idx), "If clear succeeds, bit must be clear");
+    }
+
+    // Property 4: clear is idempotent
+    let _ = bitmap.clear_bit(idx);
+    let after_first = bitmap.inner;
+    let _ = bitmap.clear_bit(idx);
+    kani::assert(bitmap.inner == after_first, "Clear is idempotent");
+}

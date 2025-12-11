@@ -4,6 +4,7 @@ use crate::inode::InodeStore;
 use core::mem::size_of;
 use kernel::fs::FileSystem;
 use kernel::inode;
+use kernel::types::{Error, Result};
 // use kernel::new_mutex;
 // use kernel::prelude::*;
 // use kernel::sync::Mutex;
@@ -92,30 +93,40 @@ impl EzfsSuperblock {
 
 #[repr(transparent)]
 #[cfg_attr(kani, derive(kani::Arbitrary))]
-pub(crate) struct Bitmap<const N: usize> {
-    inner: [u32; N],
+pub struct Bitmap<const N: usize> {
+    pub inner: [u32; N],
 }
 
 impl<const N: usize> Bitmap<N> {
     #[inline]
     pub(crate) fn is_set(&self, block_num: u64) -> bool {
-        let idx: usize = (block_num / 32) as usize;
+        let idx = (block_num / 32) as usize;
+        if idx >= N {
+            return false;
+        }
+
         let mask = 1 << (block_num % 32);
         (self.inner[idx] & mask) != 0
     }
 
     #[inline]
-    pub(crate) fn set_bit(&mut self, block_num: u64) {
-        let idx: usize = (block_num / 32) as usize;
+    pub fn set_bit(&mut self, block_num: u64) -> Result {
+        let idx = (block_num / 32) as usize;
         let mask = 1 << (block_num % 32);
-        self.inner[idx] |= mask
+        let val = self.inner.get_mut(idx).ok_or(Error(20))?;
+        *val |= mask;
+
+        Ok(())
     }
 
     #[inline]
-    pub(crate) fn clear_bit(&mut self, block_num: u64) {
+    pub fn clear_bit(&mut self, block_num: u64) -> Result {
         let idx: usize = (block_num / 32) as usize;
         let mask = 1 << (block_num % 32);
-        self.inner[idx] &= !mask
+        let val = self.inner.get_mut(idx).ok_or(Error(20))?;
+        *val &= !mask;
+
+        Ok(())
     }
 
     pub const fn new(inner: [u32; N]) -> Self {
