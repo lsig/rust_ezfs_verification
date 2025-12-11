@@ -85,6 +85,40 @@ fn verify_inode_allocated() {
 }
 
 #[kani::proof]
+fn verify_inode_deallocation() {
+    let mut sb = EzfsSuperblock {
+        version: 1,
+        magic: 0x4118,
+        disk_blocks: kani::any(),
+        data: Mutex::new(EzfsSuperblockData {
+            free_inodes: kani::any(),
+            free_data_blocks: Bitmap::new([0; (EZFS_MAX_DATA_BLKS / 32) + 1]),
+            zero_data_blocks: Bitmap::new([0; (EZFS_MAX_DATA_BLKS / 32) + 1]),
+        }),
+        mapper: Mapper::<RustEzFs> {
+            inode: INode::<RustEzFs> { ino: 0, data: None },
+            begin: 0,
+            end: 4096,
+        },
+    };
+
+    let ino: u64 = kani::any();
+    let res = RustEzFs::deallocate_inode(&sb, ino.try_into().unwrap());
+
+    let bitmap_copy = {
+        let sb_data = sb.data.lock().unwrap();
+        sb_data.free_inodes.clone()
+    };
+
+    if let Ok(ans) = res {
+        kani::assert(
+            bitmap_copy.is_set(ino - EZFS_ROOT_INODE_NUMBER as u64) == false,
+            "Deallocated inode should never be set",
+        );
+    }
+}
+
+#[kani::proof]
 fn verify_bitmap_simple_allocation() {
     let mut bitmap: Bitmap<4> = kani::any();
     let idx: u64 = kani::any();

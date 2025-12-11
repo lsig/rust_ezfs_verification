@@ -64,7 +64,7 @@ impl RustEzFs {
 
         sb_data
             .free_inodes
-            .clear_bit((ino - EZFS_ROOT_INODE_NUMBER) as u64)?;
+            .clear_bit(ino.checked_sub(EZFS_ROOT_INODE_NUMBER).ok_or(Error(22))? as u64)?;
 
         Ok(())
     }
