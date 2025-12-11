@@ -37,7 +37,9 @@ impl RustEzFs {
     fn inode_allocated(ezfs_sb: &EzfsSuperblock, ino: usize) -> Result<bool> {
         let sb_data = ezfs_sb.data.lock().map_err(|_| Error(21))?;
 
-        let idx: u64 = (ino - EZFS_ROOT_INODE_NUMBER)
+        let idx: u64 = ino
+            .checked_sub(EZFS_ROOT_INODE_NUMBER)
+            .ok_or(Error(21))?
             .try_into()
             .map_err(|_| Error(21))?;
 

@@ -1,5 +1,5 @@
 use crate::RustEzFs;
-use crate::defs::{EZFS_MAGIC_NUMBER, EZFS_MAX_DATA_BLKS};
+use crate::defs::{EZFS_MAGIC_NUMBER, EZFS_MAX_DATA_BLKS, EZFS_ROOT_INODE_NUMBER};
 use crate::sb::{Bitmap, EzfsSuperblock, EzfsSuperblockData};
 use kernel::fs::FileSystem;
 use kernel::inode::{INode, Mapper};
@@ -46,6 +46,40 @@ fn verify_inode_allocation() {
         kani::assert(
             ino1 != ino2,
             "Sequential allocations must return different inodes",
+        );
+    }
+}
+
+#[kani::proof]
+fn verify_inode_allocated() {
+    let mut sb = EzfsSuperblock {
+        version: 1,
+        magic: 0x4118,
+        disk_blocks: kani::any(),
+        data: Mutex::new(EzfsSuperblockData {
+            free_inodes: kani::any(),
+            free_data_blocks: Bitmap::new([0; (EZFS_MAX_DATA_BLKS / 32) + 1]),
+            zero_data_blocks: Bitmap::new([0; (EZFS_MAX_DATA_BLKS / 32) + 1]),
+        }),
+        mapper: Mapper::<RustEzFs> {
+            inode: INode::<RustEzFs> { ino: 0, data: None },
+            begin: 0,
+            end: 4096,
+        },
+    };
+
+    let ino: u64 = kani::any();
+    let res = RustEzFs::inode_allocated(&sb, ino.try_into().unwrap());
+
+    let bitmap_copy = {
+        let sb_data = sb.data.lock().unwrap();
+        sb_data.free_inodes.clone()
+    };
+
+    if let Ok(ans) = res {
+        kani::assert(
+            ans == bitmap_copy.is_set(ino - EZFS_ROOT_INODE_NUMBER as u64),
+            "Bitmap states should match",
         );
     }
 }

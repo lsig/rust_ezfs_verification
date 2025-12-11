@@ -93,6 +93,7 @@ impl EzfsSuperblock {
 
 #[repr(transparent)]
 #[cfg_attr(kani, derive(kani::Arbitrary))]
+#[derive(Clone, Copy)]
 pub struct Bitmap<const N: usize> {
     pub inner: [u32; N],
 }
