@@ -25,12 +25,23 @@ use kernel::types::{ARef, Error, Locked, Result};
 
 use core::marker::{PhantomData, Send, Sync};
 use core::mem::size_of;
+use std::ops::Range;
 
 struct RustEzFs;
 
 impl RustEzFs {
-    fn get_max_blocks(sb: &EzfsSuperblock) -> u64 {
+    fn max_blocks(sb: &EzfsSuperblock) -> u64 {
         (sb.disk_blocks - 2).min(EZFS_MAX_DATA_BLKS as u64)
+    }
+
+    fn inode_allocated(ezfs_sb: &EzfsSuperblock, ino: usize) -> Result<bool> {
+        let sb_data = ezfs_sb.data.lock().map_err(|_| Error(21))?;
+
+        let idx: u64 = (ino - EZFS_ROOT_INODE_NUMBER)
+            .try_into()
+            .map_err(|_| Error(21))?;
+
+        Ok(sb_data.free_inodes.is_set(idx))
     }
 
     fn allocate_inode(sb: &EzfsSuperblock) -> Result<usize> {
@@ -38,8 +49,49 @@ impl RustEzFs {
 
         for idx in 0..EZFS_MAX_INODES {
             if !sb_data.free_inodes.is_set(idx as u64) {
-                sb_data.free_inodes.set_bit(idx as u64);
-                return Ok(idx + 1); // FS is 1-indexed
+                sb_data.free_inodes.set_bit(idx as u64)?;
+                return Ok(idx + EZFS_ROOT_INODE_NUMBER); // FS is 1-indexed
+            }
+        }
+
+        Err(Error(21))
+    }
+
+    fn deallocate_inode(ezfs_sb: &EzfsSuperblock, ino: usize) -> Result {
+        let mut sb_data = ezfs_sb.data.lock().map_err(|_| Error(21))?;
+
+        sb_data
+            .free_inodes
+            .clear_bit((ino - EZFS_ROOT_INODE_NUMBER) as u64)?;
+
+        Ok(())
+    }
+
+    fn deallocate_data_blocks(ezfs_sb: &EzfsSuperblock, range: Range<u64>) -> Result {
+        let mut sb_data = ezfs_sb.data.lock().map_err(|_| Error(21))?;
+
+        for data_blk in range {
+            sb_data
+                .free_data_blocks
+                .clear_bit(data_blk - EZFS_ROOT_DATABLOCK_NUMBER as u64)?;
+
+            sb_data
+                .zero_data_blocks
+                .clear_bit(data_blk - EZFS_ROOT_DATABLOCK_NUMBER as u64)?;
+        }
+
+        Ok(())
+    }
+
+    fn allocate_data_block(ezfs_sb: &EzfsSuperblock) -> Result<u64> {
+        let max_blocks = Self::max_blocks(ezfs_sb);
+
+        let mut sb_data = ezfs_sb.data.lock().map_err(|_| Error(21))?;
+
+        for idx in 0..max_blocks {
+            if !sb_data.free_data_blocks.is_set(idx) {
+                sb_data.free_data_blocks.set_bit(idx)?;
+                return Ok(idx + EZFS_ROOT_DATABLOCK_NUMBER as u64);
             }
         }
 
