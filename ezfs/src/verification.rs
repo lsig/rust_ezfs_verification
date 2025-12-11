@@ -119,6 +119,27 @@ fn verify_inode_deallocation() {
 }
 
 #[kani::proof]
+fn verify_max_blocks() {
+    let mut sb = EzfsSuperblock {
+        version: 1,
+        magic: 0x4118,
+        disk_blocks: kani::any(),
+        data: Mutex::new(EzfsSuperblockData {
+            free_inodes: Bitmap::new([0; (EZFS_MAX_INODES / 32) + 1]),
+            free_data_blocks: Bitmap::new([0; (EZFS_MAX_INODES / 32) + 1]),
+            zero_data_blocks: Bitmap::new([0; (EZFS_MAX_INODES / 32) + 1]),
+        }),
+        mapper: Mapper::<RustEzFs> {
+            inode: INode::<RustEzFs> { ino: 0, data: None },
+            begin: 0,
+            end: 4096,
+        },
+    };
+
+    RustEzFs::max_blocks(&sb);
+}
+
+#[kani::proof]
 #[kani::unwind(57)]
 fn verify_data_block_allocation() {
     let mut sb = EzfsSuperblock {
