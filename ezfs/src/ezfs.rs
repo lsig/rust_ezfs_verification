@@ -30,8 +30,8 @@ use std::ops::Range;
 struct RustEzFs;
 
 impl RustEzFs {
-    fn max_blocks(sb: &EzfsSuperblock) -> u64 {
-        (sb.disk_blocks - 2).min(EZFS_MAX_DATA_BLKS as u64)
+    fn max_blocks(sb: &EzfsSuperblock) -> Result<u64> {
+        Ok((sb.disk_blocks.checked_sub(2).ok_or(Error(21))?).min(EZFS_MAX_DATA_BLKS as u64))
     }
 
     fn inode_allocated(ezfs_sb: &EzfsSuperblock, ino: usize) -> Result<bool> {
@@ -86,7 +86,7 @@ impl RustEzFs {
     }
 
     fn allocate_data_block(ezfs_sb: &EzfsSuperblock) -> Result<u64> {
-        let max_blocks = Self::max_blocks(ezfs_sb);
+        let max_blocks = Self::max_blocks(ezfs_sb)?;
 
         let mut sb_data = ezfs_sb.data.lock().map_err(|_| Error(21))?;
 

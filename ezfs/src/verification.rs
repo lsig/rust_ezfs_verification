@@ -1,5 +1,5 @@
 use crate::RustEzFs;
-use crate::defs::{EZFS_MAGIC_NUMBER, EZFS_MAX_DATA_BLKS, EZFS_ROOT_INODE_NUMBER};
+use crate::defs::{EZFS_MAGIC_NUMBER, EZFS_MAX_DATA_BLKS, EZFS_MAX_INODES, EZFS_ROOT_INODE_NUMBER};
 use crate::sb::{Bitmap, EzfsSuperblock, EzfsSuperblockData};
 use kernel::fs::FileSystem;
 use kernel::inode::{INode, Mapper};
@@ -114,6 +114,37 @@ fn verify_inode_deallocation() {
         kani::assert(
             bitmap_copy.is_set(ino - EZFS_ROOT_INODE_NUMBER as u64) == false,
             "Deallocated inode should never be set",
+        );
+    }
+}
+
+#[kani::proof]
+#[kani::unwind(57)]
+fn verify_data_block_allocation() {
+    let mut sb = EzfsSuperblock {
+        version: 1,
+        magic: 0x4118,
+        disk_blocks: kani::any(),
+        data: Mutex::new(EzfsSuperblockData {
+            free_inodes: Bitmap::new([0; (EZFS_MAX_INODES / 32) + 1]),
+            free_data_blocks: kani::any(),
+            zero_data_blocks: kani::any(),
+        }),
+        mapper: Mapper::<RustEzFs> {
+            inode: INode::<RustEzFs> { ino: 0, data: None },
+            begin: 0,
+            end: 4096,
+        },
+    };
+
+    let res1 = RustEzFs::allocate_data_block(&sb);
+    let res2 = RustEzFs::allocate_data_block(&sb);
+
+    // If the allocation succeds they are not the same
+    if let (Ok(ino1), Ok(ino2)) = (res1, res2) {
+        kani::assert(
+            ino1 != ino2,
+            "Sequential allocations must return different data_blocks",
         );
     }
 }

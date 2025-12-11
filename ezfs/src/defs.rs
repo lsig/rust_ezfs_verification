@@ -13,5 +13,7 @@ pub(crate) const EZFS_INODE_STORE_DATABLOCK_NUMBER: usize = 1;
 pub(crate) const EZFS_ROOT_DATABLOCK_NUMBER: usize = 2;
 
 pub(crate) const EZFS_MAX_INODES: usize = EZFS_BLOCK_SIZE / size_of::<EzfsInode>();
-pub(crate) const EZFS_MAX_DATA_BLKS: usize = EZFS_MAX_INODES * 256;
+// pub(crate) const EZFS_MAX_DATA_BLKS: usize = EZFS_MAX_INODES * 256;
 pub(crate) const EZFS_MAX_CHILDREN: usize = EZFS_BLOCK_SIZE / size_of::<EzfsDirEntry>();
+
+pub(crate) const EZFS_MAX_DATA_BLKS: usize = EZFS_MAX_INODES;
