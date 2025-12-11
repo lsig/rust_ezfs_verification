@@ -1,5 +1,5 @@
 use crate::RustEzFs;
-use crate::defs::{EZFS_MAGIC_NUMBER, EZFS_MAX_DATA_BLKS, EZFS_MAX_INODES, EZFS_ROOT_INODE_NUMBER};
+use crate::defs::*;
 use crate::sb::{Bitmap, EzfsSuperblock, EzfsSuperblockData};
 use kernel::fs::FileSystem;
 use kernel::inode::{INode, Mapper};
@@ -146,6 +146,50 @@ fn verify_data_block_allocation() {
             ino1 != ino2,
             "Sequential allocations must return different data_blocks",
         );
+    }
+}
+
+#[kani::proof]
+#[kani::unwind(57)]
+fn verify_data_block_deallocation() {
+    let mut sb = EzfsSuperblock {
+        version: 1,
+        magic: 0x4118,
+        disk_blocks: kani::any(),
+        data: Mutex::new(EzfsSuperblockData {
+            free_inodes: Bitmap::new([0; (EZFS_MAX_INODES / 32) + 1]),
+            free_data_blocks: kani::any(),
+            zero_data_blocks: kani::any(),
+        }),
+        mapper: Mapper::<RustEzFs> {
+            inode: INode::<RustEzFs> { ino: 0, data: None },
+            begin: 0,
+            end: 4096,
+        },
+    };
+
+    let start = kani::any();
+    let end = kani::any();
+
+    let max_blocks = RustEzFs::max_blocks(&sb).unwrap_or(0);
+
+    kani::assume(start < end);
+    kani::assume(end <= max_blocks);
+
+    let res = RustEzFs::deallocate_data_blocks(&sb, start..end);
+
+    let bitmap_copy = {
+        let sb_data = sb.data.lock().unwrap();
+        sb_data.free_data_blocks.clone()
+    };
+
+    if let Ok(ans) = res {
+        for idx in start..end {
+            kani::assert(
+                bitmap_copy.is_set(idx - EZFS_ROOT_DATABLOCK_NUMBER as u64) == false,
+                "Deallocated datablock should never be set in the range",
+            );
+        }
     }
 }
 

@@ -73,13 +73,12 @@ impl RustEzFs {
         let mut sb_data = ezfs_sb.data.lock().map_err(|_| Error(21))?;
 
         for data_blk in range {
-            sb_data
-                .free_data_blocks
-                .clear_bit(data_blk - EZFS_ROOT_DATABLOCK_NUMBER as u64)?;
+            let blk_idx = data_blk
+                .checked_sub(EZFS_ROOT_DATABLOCK_NUMBER as u64)
+                .ok_or(Error(21))?;
 
-            sb_data
-                .zero_data_blocks
-                .clear_bit(data_blk - EZFS_ROOT_DATABLOCK_NUMBER as u64)?;
+            sb_data.free_data_blocks.clear_bit(blk_idx)?;
+            sb_data.zero_data_blocks.clear_bit(blk_idx)?;
         }
 
         Ok(())
